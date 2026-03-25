@@ -1,7 +1,7 @@
 """
 Allowed action vocabulary for browser agent; one line per action.
 
-Parsed by parse_action(), intended to be executed later by BrowserEnv.execute_action()
+Parsed by parse_action(), executed by BrowserEnv.execute_action()
 Indices refer to the same ordering as get_observation() / BrowserEnv._last_interactive_locators for now
 
 overall goal: make observation in browser env, llm reasons over observation+goal+history

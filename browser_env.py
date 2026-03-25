@@ -1,5 +1,5 @@
 """
-TODO: create a browser environment in which a webagent can operate and train :3
+playwright browser environment in which an agent can operate and train
 
 overall approach:
 1. start playwright (synchronous api for now)
@@ -8,9 +8,6 @@ overall approach:
 4. navigate to a url
 5. observe and perform actions on the page (after ensuring dom loaded)
 6. shut entire environment down
-
-basic lifecycle done: start chromium, goto a page, navigate, shut down env
-now implementing text observations, then action parsing from a tiny action vocabulary
 """
 
 from __future__ import annotations
