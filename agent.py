@@ -103,6 +103,7 @@ def run_episode(
     system_msg = {"role": "system", "content": build_system_prompt()}
     action_history: list[str] = []
     steps: list[dict] = []
+    consecutive_failures: int = 0
 
     print(f"[run {run_id}] goal: {goal}")
     print(f"[run {run_id}] log:  {log_path}")
@@ -121,8 +122,12 @@ def run_episode(
             }
             messages = [system_msg, user_msg]
 
-            # call llm
-            raw = chat(messages, model=model).strip()
+            # call llm; take only the first non-empty line. needed since the model occasionally
+            # repeats the action or adds trailing commentary, and shlex.split() in
+            # parse_action() tokenises across newlines, turning "click 39\nclick 39"
+            # into ['click','39','click','39'] (4 tokens) which fails the len==2 check.
+            raw_full = chat(messages, model=model)
+            raw = next((l.strip() for l in raw_full.splitlines() if l.strip()), raw_full.strip())
             print(f"[step {step_num}] model: {raw!r}")
 
             # parse
@@ -157,9 +162,27 @@ def run_episode(
             log_f.write(json.dumps(step_record) + "\n")
             log_f.flush()
 
-            # advance history (only on successful parse)
+            # advance history; only append on successful exec, with semantic context for
+            # click/type/goto so the model can reason about where each action led.
+            # failed actions are annotated with [failed] so the model knows to pick something else.
+            exec_ok = bool(exec_result and exec_result.get("ok"))
             if parsed is not None:
-                action_history.append(raw)
+                if not exec_ok:
+                    err_summary = (exec_result or {}).get("error", "unknown error").split("\n")[0]
+                    history_entry = f"{raw}  [failed: {err_summary}]"
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0
+                    if parsed.action_type == "click" and parsed.index is not None:
+                        label = obs.element_descs[parsed.index] if parsed.index < len(obs.element_descs) else "?"
+                        history_entry = f'click {parsed.index}  →  "{label}"  →  {env.page.url}'
+                    elif parsed.action_type == "type" and parsed.submit:
+                        history_entry = f"{raw}  →  {env.page.url}"
+                    elif parsed.action_type == "goto":
+                        history_entry = f"{raw}  →  {env.page.url}"
+                    else:
+                        history_entry = raw
+                action_history.append(history_entry)
 
             # stop conditions
             if parse_error is not None:
@@ -167,6 +190,9 @@ def run_episode(
                 break
             if parsed is not None and (parsed.action_type == "stop" or (exec_result or {}).get("done")):
                 print(f"[run {run_id}] done at step {step_num}")
+                break
+            if consecutive_failures >= 3:
+                print(f"[run {run_id}] stopping: {consecutive_failures} consecutive exec failures at step {step_num}")
                 break
 
         else:
@@ -177,15 +203,17 @@ def run_episode(
 
 
 if __name__ == "__main__":
-    # needs api key set in env and playwright install chromium
     steps = run_episode(
         url="https://duckduckgo.com", # agent loop works,
                                       # ddg is much less adversarial to headed playwright than google.
                                       # annoyingly headless playwright is still blocked
-        goal="Navigate to 'wikipedia.com' and then search for 'linux' in the search bar, then click the link to Linus Torvalds.", # works super fast with batch observation :') 
-                                                                                                                                  # so beautiful. god.
-        model="gpt-5.4-mini",
-        max_steps=5,
+        goal="""Search up Linus Torvalds, go to his wikipedia page, and then play the wikipedia game from there, 
+                i.e. clicking on links with your best judgment, until you get to Lana Del Rey's wikipedia page.
+                Rules: you cannot search for the page you want! You must only click forward hyperlinks to get there, 
+                and cannot use the back button to go back. Good luck love!""",
+                # so beautiful. god.
+        model="gpt-5.4",
+        max_steps=500,
         headless=False, # great for testing
     )
     print(f"\nTotal steps recorded: {len(steps)}")
