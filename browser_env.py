@@ -176,6 +176,10 @@ class BrowserEnv:
         recent get_observation() output
         """
         try:
+            self.page.wait_for_load_state("domcontentloaded", timeout=8000)
+        except Exception:
+            pass  # let page.title() handle it?
+        try:
             action_type = action.action_type
 
             if action_type == "stop":
@@ -216,7 +220,7 @@ class BrowserEnv:
                         # using the keyboard is the most consistent way to trigger Enter after typing
                         self.page.keyboard.press("Enter")
                 try:
-                    self.page.wait_for_load_state("domcontentloaded", timeout=3000)
+                    self.page.wait_for_load_state("domcontentloaded", timeout=8000)
                 except Exception:
                     pass
                 return {"ok": True}
